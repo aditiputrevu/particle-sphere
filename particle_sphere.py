@@ -345,7 +345,7 @@ class ParticleSphere:
 
 
 # ============================================================
-# FINGER COUNTING
+# COUNTING
 # ============================================================
 
 def count_fingers(landmarks):
