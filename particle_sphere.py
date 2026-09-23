@@ -15,7 +15,7 @@ NUM_PARTICLES = 3000
 
 CAMERA_INDEX = 0
 
-PINCH_THRESHOLD = 0.42
+PINCH_THRESHOLD = 0.55
 CHARGE_TIME = 1.4
 
 BACKGROUND_DARKNESS = 0.35
@@ -218,9 +218,9 @@ class ParticleSphere:
 
                 travel = clamp(travel, 0, 1)
 
-                x += p["vx"] * travel * 2.5
-                y += p["vy"] * travel * 2.5
-                z += p["vz"] * travel * 2.5
+                x += p["vx"] * travel * 4.0
+                y += p["vy"] * travel * 4.0
+                z += p["vz"] * travel * 4.0
 
                 if travel < 0.005:
                     p["burst"] = 0
@@ -589,53 +589,68 @@ while True:
         sphere.target_scale = 1
 
         # ----------------------------------------------------
-        # Pinch detection
+        # PINCH DETECTION
         # ----------------------------------------------------
 
         thumb = hand[4]
         index = hand[8]
 
-        palm_width = distance(
-            hand[5],
-            hand[17]
-        )
+        # Use palm width as a reference so pinch detection
+        # works regardless of how close your hand is to camera.
+        palm_width = distance(hand[5], hand[17])
 
-        pinch_distance = distance(
-            thumb,
-            index
-        )
+        pinch_distance = distance(thumb, index)
 
-        pinched = (
-            pinch_distance
-            <
-            palm_width * PINCH_THRESHOLD
-        )
+        pinch_ratio = pinch_distance / max(palm_width, 0.001)
+
+        # Use separate thresholds for starting/stopping a pinch.
+        # This prevents flickering around one threshold.
+        PINCH_START_THRESHOLD = 0.55
+        PINCH_RELEASE_THRESHOLD = 0.70
+
+        if previous_pinch:
+            pinched = pinch_ratio < PINCH_RELEASE_THRESHOLD
+        else:
+            pinched = pinch_ratio < PINCH_START_THRESHOLD
+
+        # ----------------------------------------------------
+        # PINCH START
+        # ----------------------------------------------------
 
         if pinched and not previous_pinch:
-
             pinch_start = time.time()
 
-        if pinched:
+            print("PINCH STARTED")
 
+        # ----------------------------------------------------
+        # WHILE PINCHING
+        # ----------------------------------------------------
+
+        if pinched:
             charge_amount = clamp(
-                (
-                    time.time()
-                    - pinch_start
-                )
-                / CHARGE_TIME,
+                (time.time() - pinch_start) / CHARGE_TIME,
                 0,
                 1
             )
 
-        # Pinch released
+        # ----------------------------------------------------
+        # PINCH RELEASE
+        # ----------------------------------------------------
+
         if not pinched and previous_pinch:
 
-            if charge_amount > 0.16:
+            print(
+                "PINCH RELEASED - charge:",
+                round(charge_amount, 2)
+            )
 
-                sphere.explode(
-                    0.5 +
-                    charge_amount * 0.9
-                )
+            # Explode even after a relatively short pinch
+            if charge_amount > 0.05:
+                power = 0.8 + charge_amount * 1.6
+
+                print("BOOM! power:", round(power, 2))
+
+                sphere.explode(power)
 
             charge_amount = 0
 
