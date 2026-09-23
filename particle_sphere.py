@@ -18,7 +18,7 @@ CAMERA_INDEX = 0
 PINCH_THRESHOLD = 0.55
 CHARGE_TIME = 1.4
 
-BACKGROUND_DARKNESS = 0.35
+BACKGROUND_DARKNESS = 0.65
 
 
 # ============================================================
@@ -116,12 +116,15 @@ class ParticleSphere:
 
         # Explosion
         self.explosion_time = 0
-
+        self.exploding = False
     # --------------------------------------------------------
 
-    def explode(self, power):
+    def explode(self, power=1.0):
+
+        print("💥 EXPLOSION TRIGGERED")
 
         self.explosion_time = time.time()
+        self.exploding = True
 
         for p in self.points:
 
@@ -131,16 +134,22 @@ class ParticleSphere:
                 p["z"] ** 2
             )
 
-            if length == 0:
+            if length < 0.001:
                 length = 1
 
-            randomness = 0.72 + random.random() * 0.6
+            # Strong outward velocity
+            speed = random.uniform(1.5, 2.5) * power
 
-            p["vx"] = p["x"] / length * randomness * power
-            p["vy"] = p["y"] / length * randomness * power
-            p["vz"] = p["z"] / length * randomness * power
+            p["vx"] = (p["x"] / length) * speed
+            p["vy"] = (p["y"] / length) * speed
+            p["vz"] = (p["z"] / length) * speed
 
-            p["burst"] = 1
+            # Add randomness so explosion isn't perfectly uniform
+            p["vx"] += random.uniform(-0.35, 0.35)
+            p["vy"] += random.uniform(-0.35, 0.35)
+            p["vz"] += random.uniform(-0.35, 0.35)
+
+            p["burst"] = 1.0
 
     # --------------------------------------------------------
 
@@ -208,21 +217,36 @@ class ParticleSphere:
 
                 age = current_time - self.explosion_time
 
-                if age < 0.65:
-                    travel = age / 0.65
+                # -----------------------------
+                # EXPLODE
+                # -----------------------------
+                if age < 0.8:
+
+                    # Move rapidly outward
+                    progress = age / 0.8
+
+                    travel = progress * 3.5
+
+                    x += p["vx"] * travel
+                    y += p["vy"] * travel
+                    z += p["vz"] * travel
+
+                # -----------------------------
+                # REFORM
+                # -----------------------------
+                elif age < 2.0:
+
+                    reform_progress = (age - 0.8) / 1.2
+
+                    # Smoothly return toward original position
+                    return_amount = (1.0 - reform_progress) * 3.5
+
+                    x += p["vx"] * return_amount
+                    y += p["vy"] * return_amount
+                    z += p["vz"] * return_amount
 
                 else:
-                    travel = math.exp(
-                        -(age - 0.65) * 2.3
-                    )
 
-                travel = clamp(travel, 0, 1)
-
-                x += p["vx"] * travel * 4.0
-                y += p["vy"] * travel * 4.0
-                z += p["vz"] * travel * 4.0
-
-                if travel < 0.005:
                     p["burst"] = 0
 
             # Y-axis rotation
@@ -457,7 +481,7 @@ pinch_start = 0
 
 charge_amount = 0
 
-show_camera = False
+show_camera = True
 
 last_hand_seen = time.time()
 
@@ -588,69 +612,85 @@ while True:
 
         sphere.target_scale = 1
 
-        # ----------------------------------------------------
+        # ========================================================
         # PINCH DETECTION
-        # ----------------------------------------------------
+        # ========================================================
 
         thumb = hand[4]
         index = hand[8]
 
-        # Use palm width as a reference so pinch detection
-        # works regardless of how close your hand is to camera.
-        palm_width = distance(hand[5], hand[17])
+        palm_width = distance(
+            hand[5],
+            hand[17]
+        )
 
-        pinch_distance = distance(thumb, index)
+        pinch_distance = distance(
+            thumb,
+            index
+        )
 
-        pinch_ratio = pinch_distance / max(palm_width, 0.001)
+        pinch_ratio = pinch_distance / max(
+            palm_width,
+            0.001
+        )
 
-        # Use separate thresholds for starting/stopping a pinch.
-        # This prevents flickering around one threshold.
-        PINCH_START_THRESHOLD = 0.55
-        PINCH_RELEASE_THRESHOLD = 0.70
+        # Different threshold for starting and releasing.
+        # This prevents MediaPipe jitter from constantly
+        # switching the pinch state.
 
         if previous_pinch:
-            pinched = pinch_ratio < PINCH_RELEASE_THRESHOLD
-        else:
-            pinched = pinch_ratio < PINCH_START_THRESHOLD
 
-        # ----------------------------------------------------
+            pinched = pinch_ratio < 0.75
+
+        else:
+
+            pinched = pinch_ratio < 0.55
+
+        # ========================================================
         # PINCH START
-        # ----------------------------------------------------
+        # ========================================================
 
         if pinched and not previous_pinch:
             pinch_start = time.time()
 
-            print("PINCH STARTED")
+            charge_amount = 0
 
-        # ----------------------------------------------------
-        # WHILE PINCHING
-        # ----------------------------------------------------
+            print("🤏 PINCH START")
+
+        # ========================================================
+        # CHARGING
+        # ========================================================
 
         if pinched:
             charge_amount = clamp(
-                (time.time() - pinch_start) / CHARGE_TIME,
+                (time.time() - pinch_start)
+                / CHARGE_TIME,
                 0,
                 1
             )
 
-        # ----------------------------------------------------
-        # PINCH RELEASE
-        # ----------------------------------------------------
+        # ========================================================
+        # RELEASE
+        # ========================================================
 
-        if not pinched and previous_pinch:
-
+        if previous_pinch and not pinched:
             print(
-                "PINCH RELEASED - charge:",
+                "✋ RELEASE",
+                "charge =",
                 round(charge_amount, 2)
             )
 
-            # Explode even after a relatively short pinch
-            if charge_amount > 0.05:
-                power = 0.8 + charge_amount * 1.6
+            # Always explode after a recognized pinch.
+            # Charge determines strength.
 
-                print("BOOM! power:", round(power, 2))
+            explosion_power = (
+                    0.8 +
+                    charge_amount * 1.5
+            )
 
-                sphere.explode(power)
+            sphere.explode(
+                explosion_power
+            )
 
             charge_amount = 0
 
@@ -919,6 +959,13 @@ while True:
     elif key == ord("b"):
 
         show_camera = not show_camera
+
+        # E = manually test explosion
+    elif key == ord("e"):
+
+        print("Manual explosion test")
+
+        sphere.explode(1.5)
 
 
 # ============================================================
